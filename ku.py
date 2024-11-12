@@ -17,6 +17,10 @@ class TimeTracker:
                 fullscreen_windows.append(window.title)
         return fullscreen_windows
 
+    def get_active_window(self):
+        active_window = gw.getActiveWindow()
+        return active_window.title if active_window else None
+
     def start_tracking(self):
         self.running = True
         start_time = time.time()
@@ -27,18 +31,18 @@ class TimeTracker:
             elapsed_time = current_time - start_time
             self.total_time += elapsed_time
 
-            fullscreen_apps = self.get_fullscreen_windows()
-            for app in fullscreen_apps:
-                if app not in self.app_times:
-                    self.app_times[app] = 0
-                self.app_times[app] += elapsed_time
+            active_app = self.get_active_window()
+            if active_app and active_app not in self.app_times:
+                self.app_times[active_app] = 0
+            if active_app:
+                self.app_times[active_app] += elapsed_time
 
             start_time = current_time
 
-            if fullscreen_apps:
-                print(f"Время: {self.total_time:.2f} секунд. Полноэкранные приложения: {fullscreen_apps}")
+            if active_app:
+                print(f"Время: {self.total_time:.2f} секунд. Активное приложение: {active_app}")
             else:
-                print(f"Время: {self.total_time:.2f} секунд. Нет полноэкранных приложений.")
+                print(f"Время: {self.total_time:.2f} секунд. Нет активного приложения.")
 
             # Проверяем, нажата ли клавиша 'Q'
             if keyboard.is_pressed('q'):
