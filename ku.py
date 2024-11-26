@@ -10,13 +10,6 @@ class TimeTracker:
         self.running = False
         self.app_times = {}
 
-    def get_fullscreen_windows(self):
-        fullscreen_windows = []
-        for window in gw.getAllWindows():
-            if window.isMaximized:
-                fullscreen_windows.append(window.title)
-        return fullscreen_windows
-
     def get_active_window(self):
         active_window = gw.getActiveWindow()
         return active_window.title if active_window else None
@@ -60,8 +53,8 @@ class TimeTracker:
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
         report_file = os.path.join(desktop_path, "time_tracker_report.txt")
 
-        # Сохраняем отчет в файл
-        with open(report_file, 'w') as file:
+        # Сохраняем отчет в файл с кодировкой utf-8
+        with open(report_file, 'w', encoding='utf-8') as file:
             file.write(f"Общее время: {self.total_time:.2f} секунд.\n")
             file.write("Хронометраж по приложениям:\n")
             for app, time_spent in self.app_times.items():
