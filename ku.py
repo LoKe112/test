@@ -4,12 +4,15 @@ import psutil
 import pygetwindow as gw
 import keyboard
 import os
+import requests
 
 class TimeTracker:
-    def __init__(self):
+    def __init__(self, bot_token, chat_id):
         self.total_time = 0
         self.running = False
         self.app_times = {}
+        self.bot_token = bot_token
+        self.chat_id = chat_id
 
     def get_active_window(self):
         active_window = gw.getActiveWindow()
@@ -56,7 +59,8 @@ class TimeTracker:
         self.running = False
         formatted_time = self.format_time(self.total_time)
         print(f"Общее время: {formatted_time}.")
-        self.save_report()
+        report_file = self.save_report()
+        self.send_telegram_message(formatted_time, report_file)
 
     def save_report(self):
         # Получаем путь к рабочему столу
@@ -71,9 +75,41 @@ class TimeTracker:
                 file.write(f"- {app}: {self.format_time(time_spent)}.\n")
 
         print(f"Отчет сохранен: {report_file}")
+        return report_file
+
+    def send_telegram_message(self, formatted_time, report_file):
+        message = f"Общее время: {formatted_time}."
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        payload = {
+            'chat_id': self.chat_id,
+            'text': message
+        }
+        
+        try:
+            # Отправка текстового сообщения
+            response = requests.post(url, data=payload)
+            if response.status_code == 200:
+                print("Сообщение отправлено в Telegram.")
+            else:
+                print(f"Не удалось отправить сообщение: {response.text}")
+
+            # Отправка файла отчета
+            with open(report_file, 'rb') as file:
+                files = {'document': file}
+                url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
+                response = requests.post(url, data={'chat_id': self.chat_id}, files=files)
+                if response.status_code == 200:
+                    print("Отчет отправлен в Telegram.")
+                else:
+                    print(f"Не удалось отправить отчет: {response.text}")
+
+        except Exception as e:
+            print(f"Ошибка при отправке сообщения в Telegram: {e}")
 
 def main():
-    tracker = TimeTracker()
+    bot_token = "8034481563:AAH0rv09GLUq27P3PuztOIS8f9X6PxUFitk"  # Укажите токен вашего бота
+    chat_id = "1092865250"  # Укажите ваш chat_id
+    tracker = TimeTracker(bot_token, chat_id)
 
     while True:
         command = input("Введите 'start' для начала хронометража или 'exit' для выхода: ").strip().lower()
