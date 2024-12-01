@@ -1,3 +1,4 @@
+
 import time
 import psutil
 import pygetwindow as gw
@@ -14,10 +15,16 @@ class TimeTracker:
         active_window = gw.getActiveWindow()
         return active_window.title if active_window else None
 
+    def format_time(self, total_seconds):
+        hours = int(total_seconds // 3600)
+        minutes = int((total_seconds % 3600) // 60)
+        seconds = total_seconds % 60
+        return f"{hours} ч. {minutes} мин. {seconds:.2f} сек."
+
     def start_tracking(self):
         self.running = True
         start_time = time.time()
-        print("Хронометраж начат. Нажмите 'Q' для завершения.")
+        print("Хронометраж начат. Нажмите '`' для завершения.")
 
         while self.running:
             current_time = time.time()
@@ -33,19 +40,22 @@ class TimeTracker:
             start_time = current_time
 
             if active_app:
-                print(f"Время: {self.total_time:.2f} секунд. Активное приложение: {active_app}")
+                formatted_time = self.format_time(self.total_time)
+                print(f"Время: {formatted_time}. Активное приложение: {active_app}")
             else:
-                print(f"Время: {self.total_time:.2f} секунд. Нет активного приложения.")
+                formatted_time = self.format_time(self.total_time)
+                print(f"Время: {formatted_time}. Нет активного приложения.")
 
-            # Проверяем, нажата ли клавиша 'Q'
-            if keyboard.is_pressed('q'):
+            # Проверяем, нажата ли клавиша '`'
+            if keyboard.is_pressed('`'):
                 self.stop_tracking()
 
             time.sleep(1)
 
     def stop_tracking(self):
         self.running = False
-        print(f"Общее время: {self.total_time:.2f} секунд.")
+        formatted_time = self.format_time(self.total_time)
+        print(f"Общее время: {formatted_time}.")
         self.save_report()
 
     def save_report(self):
@@ -55,10 +65,10 @@ class TimeTracker:
 
         # Сохраняем отчет в файл с кодировкой utf-8
         with open(report_file, 'w', encoding='utf-8') as file:
-            file.write(f"Общее время: {self.total_time:.2f} секунд.\n")
+            file.write(f"Общее время: {self.format_time(self.total_time)}.\n")
             file.write("Хронометраж по приложениям:\n")
             for app, time_spent in self.app_times.items():
-                file.write(f"- {app}: {time_spent:.2f} секунд.\n")
+                file.write(f"- {app}: {self.format_time(time_spent)}.\n")
 
         print(f"Отчет сохранен: {report_file}")
 
