@@ -3,12 +3,12 @@ import time
 import os
 import requests
 import pygetwindow as gw
+import matplotlib.pyplot as plt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
 
 class TimeTracker(QThread):
     update_time = pyqtSignal(str)
-    report_ready = pyqtSignal(str)
 
     def __init__(self, bot_token, chat_id):
         super().__init__()
@@ -55,7 +55,8 @@ class TimeTracker(QThread):
         formatted_time = self.format_time(self.total_time)
         print(f"Общее время: {formatted_time}.")
         report_file = self.save_report()
-        self.send_telegram_message(formatted_time, report_file)
+        chart_file = self.create_chart()
+        self.send_telegram_message(formatted_time, report_file, chart_file)
 
     def save_report(self):
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -64,7 +65,6 @@ class TimeTracker(QThread):
         with open(report_file, 'w', encoding='utf-8') as file:
             file.write(f"Общее время: {self.format_time(self.total_time)}.\n")
             file.write("Хронометраж по приложениям:\n")
-            # Сортировка приложений по времени
             sorted_apps = sorted(self.app_times.items(), key=lambda x: x[1], reverse=True)
             for app, time_spent in sorted_apps:
                 file.write(f"- {app}: {self.format_time(time_spent)}.\n")
@@ -72,7 +72,22 @@ class TimeTracker(QThread):
         print(f"Отчет сохранен: {report_file}")
         return report_file
 
-    def send_telegram_message(self, formatted_time, report_file):
+    def create_chart(self):
+        apps = list(self.app_times.keys())
+        times = [self.app_times[app] for app in apps]
+
+        plt.figure(figsize=(8, 8))
+        plt.pie(times, labels=apps, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
+        plt.title('Время, проведенное в приложениях')
+        plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+
+        chart_file = os.path.join(os.path.expanduser("~"), "Desktop", "time_tracker_chart.png")
+        plt.savefig(chart_file)
+        plt.close()
+        print(f"Гистограмма сохранена: {chart_file}")
+        return chart_file
+
+    def send_telegram_message(self, formatted_time, report_file, chart_file):
         message = f"Общее время: {formatted_time}."
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         payload = {
@@ -95,6 +110,15 @@ class TimeTracker(QThread):
                     print("Отчет отправлен в Telegram.")
                 else:
                     print(f"Не удалось отправить отчет: {response.text}")
+
+            with open(chart_file, 'rb') as file:
+                files = {'document': file}
+                url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
+                response = requests.post(url, data={'chat_id': self.chat_id}, files=files)
+                if response.status_code == 200:
+                    print("Гистограмма отправлена в Telegram.")
+                else:
+                    print(f"Не удалось отправить гистограмму: {response.text}")
 
         except Exception as e:
             print(f"Ошибка при отправке сообщения в Telegram: {e}")
@@ -119,10 +143,6 @@ class MainWindow(QMainWindow):
         self.stop_button.clicked.connect(self.stop_tracking)
         layout.addWidget(self.stop_button)
 
-        self.send_button = QPushButton("Отправить отчет")
-        self.send_button.clicked.connect(self.send_report)
-        layout.addWidget(self.send_button)
-
         self.label = QLabel("Статус: Ожидание...")
         layout.addWidget(self.label)
 
@@ -146,14 +166,6 @@ class MainWindow(QMainWindow):
         if self.tracker:
             self.tracker.stop_tracking()
             self.label.setText("Статус: Хронометраж завершен.")
-
-    def send_report(self):
-        if self.tracker and not self.tracker.running:
-            report_file = self.tracker.save_report()
-            self.tracker.send_telegram_message(self.tracker.format_time(self.tracker.total_time), report_file)
-            self.label.setText("Статус: Отчет отправлен.")
-        else:
-            QMessageBox.warning(self, "Ошибка", "Сначала завершите отсчет, чтобы отправить отчет.")
 
 def main():
     app = QApplication(sys.argv)
