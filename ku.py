@@ -4,11 +4,12 @@ import os
 import requests
 import pygetwindow as gw
 import matplotlib.pyplot as plt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QMessageBox
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 
 class TimeTracker(QThread):
     update_time = pyqtSignal(str)
+    send_report_signal = pyqtSignal()  # Сигнал для отправки отчета
 
     def __init__(self, bot_token, chat_id):
         super().__init__()
@@ -54,9 +55,7 @@ class TimeTracker(QThread):
         self.running = False
         formatted_time = self.format_time(self.total_time)
         print(f"Общее время: {formatted_time}.")
-        report_file = self.save_report()
-        chart_file = self.create_chart()
-        self.send_telegram_message(formatted_time, report_file, chart_file)
+        self.send_final_report()
 
     def save_report(self):
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -86,6 +85,16 @@ class TimeTracker(QThread):
         plt.close()
         print(f"Гистограмма сохранена: {chart_file}")
         return chart_file
+
+    def send_final_report(self):
+        report_file = self.save_report()
+        chart_file = self.create_chart()
+        self.send_telegram_message(self.format_time(self.total_time), report_file, chart_file)
+
+    def send_periodic_report(self):
+        report_file = self.save_report()
+        chart_file = self.create_chart()
+        self.send_telegram_message(self.format_time(self.total_time), report_file, chart_file)
 
     def send_telegram_message(self, formatted_time, report_file, chart_file):
         message = f"Общее время: {formatted_time}."
@@ -128,6 +137,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.tracker = None
         self.initUI()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.send_periodic_report)
 
     def initUI(self):
         self.setWindowTitle("Таймер Хронометража")
@@ -158,6 +169,7 @@ class MainWindow(QMainWindow):
             self.tracker.update_time.connect(self.update_label)
             self.tracker.start()
             self.label.setText("Статус: Хронометраж начат.")
+            self.timer.start(300000)  # Запуск таймера на 10 минут
 
     def update_label(self, formatted_time):
         self.label.setText(f"Статус: Время - {formatted_time}")
@@ -166,6 +178,11 @@ class MainWindow(QMainWindow):
         if self.tracker:
             self.tracker.stop_tracking()
             self.label.setText("Статус: Хронометраж завершен.")
+            self.timer.stop()  # Остановить таймер
+
+    def send_periodic_report(self):
+        if self.tracker:
+            self.tracker.send_periodic_report()
 
 def main():
     app = QApplication(sys.argv)
