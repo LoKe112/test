@@ -6,10 +6,12 @@ import pygetwindow as gw
 import matplotlib.pyplot as plt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
+from PyQt5.QtGui import QFont, QIcon, QColor
+from PyQt5.QtWidgets import QHBoxLayout
 
 class TimeTracker(QThread):
     update_time = pyqtSignal(str)
-    send_report_signal = pyqtSignal()  # Сигнал для отправки отчета
+    send_report_signal = pyqtSignal()
 
     def __init__(self, bot_token, chat_id):
         super().__init__()
@@ -32,7 +34,6 @@ class TimeTracker(QThread):
     def run(self):
         self.running = True
         start_time = time.time()
-        print("Хронометраж начат.")
 
         while self.running:
             current_time = time.time()
@@ -53,8 +54,6 @@ class TimeTracker(QThread):
 
     def stop_tracking(self):
         self.running = False
-        formatted_time = self.format_time(self.total_time)
-        print(f"Общее время: {formatted_time}.")
         self.send_final_report()
 
     def save_report(self):
@@ -68,7 +67,6 @@ class TimeTracker(QThread):
             for app, time_spent in sorted_apps:
                 file.write(f"- {app}: {self.format_time(time_spent)}.\n")
 
-        print(f"Отчет сохранен: {report_file}")
         return report_file
 
     def create_chart(self):
@@ -78,12 +76,11 @@ class TimeTracker(QThread):
         plt.figure(figsize=(8, 8))
         plt.pie(times, labels=apps, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
         plt.title('Время, проведенное в приложениях')
-        plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+        plt.axis('equal')
 
         chart_file = os.path.join(os.path.expanduser("~"), "Desktop", "time_tracker_chart.png")
         plt.savefig(chart_file)
         plt.close()
-        print(f"Гистограмма сохранена: {chart_file}")
         return chart_file
 
     def send_final_report(self):
@@ -108,26 +105,16 @@ class TimeTracker(QThread):
             response = requests.post(url, data=payload)
             if response.status_code == 200:
                 print("Сообщение отправлено в Telegram.")
-            else:
-                print(f"Не удалось отправить сообщение: {response.text}")
 
             with open(report_file, 'rb') as file:
                 files = {'document': file}
                 url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
                 response = requests.post(url, data={'chat_id': self.chat_id}, files=files)
-                if response.status_code == 200:
-                    print("Отчет отправлен в Telegram.")
-                else:
-                    print(f"Не удалось отправить отчет: {response.text}")
 
             with open(chart_file, 'rb') as file:
                 files = {'document': file}
                 url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
                 response = requests.post(url, data={'chat_id': self.chat_id}, files=files)
-                if response.status_code == 200:
-                    print("Гистограмма отправлена в Telegram.")
-                else:
-                    print(f"Не удалось отправить гистограмму: {response.text}")
 
         except Exception as e:
             print(f"Ошибка при отправке сообщения в Telegram: {e}")
@@ -142,29 +129,35 @@ class MainWindow(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle("Таймер Хронометража")
-        self.setGeometry(100, 100, 300, 200)
+        self.setGeometry(100, 100, 400, 300)
+        self.setWindowIcon(QIcon('icon.png'))  # Укажите путь к иконке
 
         layout = QVBoxLayout()
 
         self.start_button = QPushButton("Начать отсчет")
+        self.start_button.setStyleSheet("background-color: #4CAF50; color: white; font-size: 16px;")
         self.start_button.clicked.connect(self.start_tracking)
         layout.addWidget(self.start_button)
 
         self.stop_button = QPushButton("Закончить отсчет")
+        self.stop_button.setStyleSheet("background-color: #f44336; color: white; font-size: 16px;")
         self.stop_button.clicked.connect(self.stop_tracking)
         layout.addWidget(self.stop_button)
 
         self.label = QLabel("Статус: Ожидание...")
+        self.label.setFont(QFont("Arial", 12))
         layout.addWidget(self.label)
 
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
+        self.setStyleSheet("background-color: #2E2E2E; color: white;")  # Основной цвет фона
+
     def start_tracking(self):
         if not self.tracker or not self.tracker.isRunning():
-            bot_token = "8034481563:AAH0rv09GLUq27P3PuztOIS8f9X6PxUFitk"  # Укажите токен вашего бота
-            chat_id = "1092865250"  # Укажите ваш chat_id
+            bot_token = "YOUR_BOT_TOKEN"  # Укажите токен вашего бота
+            chat_id = "YOUR_CHAT_ID"  # Укажите ваш chat_id
             self.tracker = TimeTracker(bot_token, chat_id)
             self.tracker.update_time.connect(self.update_label)
             self.tracker.start()
@@ -178,7 +171,7 @@ class MainWindow(QMainWindow):
         if self.tracker:
             self.tracker.stop_tracking()
             self.label.setText("Статус: Хронометраж завершен.")
-            self.timer.stop()  # Остановить таймер
+            self.timer.stop()
 
     def send_periodic_report(self):
         if self.tracker:
