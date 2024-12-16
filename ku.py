@@ -4,10 +4,9 @@ import os
 import requests
 import pygetwindow as gw
 import matplotlib.pyplot as plt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QInputDialog, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QIcon, QColor
-from PyQt5.QtWidgets import QHBoxLayout
+from PyQt5.QtGui import QFont, QIcon
 
 class TimeTracker(QThread):
     update_time = pyqtSignal(str)
@@ -18,6 +17,8 @@ class TimeTracker(QThread):
         self.total_time = 0
         self.running = False
         self.app_times = {}
+        self.tasks = []  # Задачи будут храниться в виде словарей
+        self.task_times = {}  # Словарь для хранения реального времени задач
         self.bot_token = bot_token
         self.chat_id = chat_id
 
@@ -55,6 +56,7 @@ class TimeTracker(QThread):
     def stop_tracking(self):
         self.running = False
         self.send_final_report()
+        self.tasks.clear()  # Очистка задач при завершении отсчета
 
     def save_report(self):
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -66,6 +68,12 @@ class TimeTracker(QThread):
             sorted_apps = sorted(self.app_times.items(), key=lambda x: x[1], reverse=True)
             for app, time_spent in sorted_apps:
                 file.write(f"- {app}: {self.format_time(time_spent)}.\n")
+
+            file.write("\nЗадачи на сессию:\n")
+            for task in self.tasks:
+                planned_time = task['planned_time']
+                real_time = self.task_times.get(task['name'], 0)
+                file.write(f"- {task['name']}: {self.format_time(planned_time)} // {self.format_time(real_time)}\n")
 
         return report_file
 
@@ -144,6 +152,11 @@ class MainWindow(QMainWindow):
         self.stop_button.clicked.connect(self.stop_tracking)
         layout.addWidget(self.stop_button)
 
+        self.task_button = QPushButton("Добавить задачу")
+        self.task_button.setStyleSheet("background-color: #2196F3; color: white; font-size: 16px;")
+        self.task_button.clicked.connect(self.add_task)
+        layout.addWidget(self.task_button)
+
         self.label = QLabel("Статус: Ожидание...")
         self.label.setFont(QFont("Arial", 12))
         layout.addWidget(self.label)
@@ -156,13 +169,14 @@ class MainWindow(QMainWindow):
 
     def start_tracking(self):
         if not self.tracker or not self.tracker.isRunning():
-            bot_token = "YOUR_BOT_TOKEN"  # Укажите токен вашего бота
-            chat_id = "YOUR_CHAT_ID"  # Укажите ваш chat_id
+            bot_token = "8034481563:AAH0rv09GLUq27P3PuztOIS8f9X6PxUFitk"  # Укажите токен вашего бота
+            chat_id = "1092865250"  # Укажите ваш chat_id
             self.tracker = TimeTracker(bot_token, chat_id)
             self.tracker.update_time.connect(self.update_label)
             self.tracker.start()
             self.label.setText("Статус: Хронометраж начат.")
             self.timer.start(300000)  # Запуск таймера на 10 минут
+            self.task_button.setEnabled(True)  # Разблокируем кнопку добавления задач
 
     def update_label(self, formatted_time):
         self.label.setText(f"Статус: Время - {formatted_time}")
@@ -172,6 +186,24 @@ class MainWindow(QMainWindow):
             self.tracker.stop_tracking()
             self.label.setText("Статус: Хронометраж завершен.")
             self.timer.stop()
+            self.task_button.setEnabled(False)  # Блокируем кнопку добавления задач при завершении отсчета
+
+    def add_task(self):
+        if self.tracker is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала начните отсчет.")
+            return
+
+        task_name, ok = QInputDialog.getText(self, "Добавить задачу", "Введите название задачи:")
+        if ok and task_name:
+            planned_time_str, ok = QInputDialog.getText(self, "Запланированное время", "Введите запланированное время в секундах:")
+            if ok and planned_time_str.isdigit():
+                planned_time = int(planned_time_str)
+                self.tracker.tasks.append({'name': task_name, 'planned_time': planned_time})
+                self.tracker.task_times[task_name] = self.tracker.total_time  # Сохраняем время начала задачи
+            else:
+                QMessageBox.warning(self, "Ошибка", "Некорректное запланированное время.")
+        elif not ok:
+            QMessageBox.information(self, "Информация", "Добавление задачи отменено.")
 
     def send_periodic_report(self):
         if self.tracker:
