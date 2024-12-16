@@ -4,7 +4,7 @@ import os
 import requests
 import pygetwindow as gw
 import matplotlib.pyplot as plt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QInputDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QInputDialog, QMessageBox, QDialog, QCheckBox, QSpinBox
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon
 
@@ -21,6 +21,9 @@ class TimeTracker(QThread):
         self.task_times = {}  # Словарь для хранения реального времени задач
         self.bot_token = bot_token
         self.chat_id = chat_id
+        self.auto_report_enabled = False  # Флаг для авторассылки отчетов
+        self.report_interval = 5  # Интервал в минутах по умолчанию
+        self.threshold_percentage = 5  # Пороговый процент по умолчанию
 
     def get_active_window(self):
         active_window = gw.getActiveWindow()
@@ -81,6 +84,20 @@ class TimeTracker(QThread):
         apps = list(self.app_times.keys())
         times = [self.app_times[app] for app in apps]
 
+        if len(apps) > 10:
+            # Объединяем приложения, которые составляют менее порогового процента
+            threshold = self.total_time * (self.threshold_percentage / 100)
+            other_time = sum(time for time in times if time < threshold)
+            filtered_apps = [app for app, time in zip(apps, times) if time >= threshold]
+            filtered_times = [time for time in times if time >= threshold]
+
+            if other_time > 0:
+                filtered_apps.append("Остальное")
+                filtered_times.append(other_time)
+
+            apps = filtered_apps
+            times = filtered_times
+
         plt.figure(figsize=(8, 8))
         plt.pie(times, labels=apps, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
         plt.title('Время, проведенное в приложениях')
@@ -91,14 +108,24 @@ class TimeTracker(QThread):
         plt.close()
         return chart_file
 
+        #plt.figure(figsize=(8, 8))
+        #plt.pie(times, labels=apps, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
+        #plt.title('Время, проведенное в приложениях')
+        #plt.axis('equal')
+
+        #chart_file = os.path.join(os.path.expanduser("~"), "Desktop", "time_tracker_chart.png")
+        #plt.savefig(chart_file)
+        #plt.close()
+        #return chart_file
+
     def send_final_report(self):
         report_file = self.save_report()
-        chart_file = self.create_chart()
+        chart_file = self.create_chart()  # Создание диаграммы для финального отчета
         self.send_telegram_message(self.format_time(self.total_time), report_file, chart_file)
 
     def send_periodic_report(self):
         report_file = self.save_report()
-        chart_file = self.create_chart()
+        chart_file = self.create_chart()  # Создание диаграммы для автоотчетов
         self.send_telegram_message(self.format_time(self.total_time), report_file, chart_file)
 
     def send_telegram_message(self, formatted_time, report_file, chart_file):
@@ -126,6 +153,50 @@ class TimeTracker(QThread):
 
         except Exception as e:
             print(f"Ошибка при отправке сообщения в Telegram: {e}")
+
+class SettingsDialog(QDialog):
+    def __init__(self, tracker):
+        super().__init__()
+        self.tracker = tracker
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Настройки")
+        self.setGeometry(100, 100, 300, 250)
+
+        layout = QVBoxLayout()
+
+        self.auto_report_checkbox = QCheckBox("Включить авторассылку отчетов")
+        self.auto_report_checkbox.setChecked(self.tracker.auto_report_enabled)
+        layout.addWidget(self.auto_report_checkbox)
+
+        self.interval_label = QLabel("Интервал рассылки (минуты):")
+        layout.addWidget(self.interval_label)
+
+        self.interval_spinner = QSpinBox()
+        self.interval_spinner.setRange(1, 60)  # Устанавливаем диапазон от 1 до 60 минут
+        self.interval_spinner.setValue(self.tracker.report_interval)  # Устанавливаем текущее значение
+        layout.addWidget(self.interval_spinner)
+
+        self.threshold_label = QLabel("Выберите пороговой процент n:")
+        layout.addWidget(self.threshold_label)
+
+        self.threshold_spinner = QSpinBox()
+        self.threshold_spinner.setRange(1, 100)  # Устанавливаем диапазон от 1 до 100 процентов
+        self.threshold_spinner.setValue(self.tracker.threshold_percentage)  # Устанавливаем текущее значение
+        layout.addWidget(self.threshold_spinner)
+
+        self.save_button = QPushButton("Сохранить настройки")
+        self.save_button.clicked.connect(self.save_settings)
+        layout.addWidget(self.save_button)
+
+        self.setLayout(layout)
+
+    def save_settings(self):
+        self.tracker.auto_report_enabled = self.auto_report_checkbox.isChecked()
+        self.tracker.report_interval = self.interval_spinner.value()
+        self.tracker.threshold_percentage = self.threshold_spinner.value()  # Сохраняем пороговый процент
+        self.close()  # Закрываем окно настроек
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -161,6 +232,11 @@ class MainWindow(QMainWindow):
         self.label.setFont(QFont("Arial", 12))
         layout.addWidget(self.label)
 
+        self.settings_button = QPushButton("⚙️ Настройки")
+        self.settings_button.setStyleSheet("background-color: #FFC107; color: black; font-size: 16px;")
+        self.settings_button.clicked.connect(self.open_settings)
+        layout.addWidget(self.settings_button)
+
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
@@ -175,8 +251,11 @@ class MainWindow(QMainWindow):
             self.tracker.update_time.connect(self.update_label)
             self.tracker.start()
             self.label.setText("Статус: Хронометраж начат.")
-            self.timer.start(300000)  # Запуск таймера на 10 минут
             self.task_button.setEnabled(True)  # Разблокируем кнопку добавления задач
+
+            # Запускаем таймер для автоотчетов, если включен
+            if self.tracker.auto_report_enabled:
+                self.timer.start(self.tracker.report_interval * 60000)  # Устанавливаем интервал в миллисекундах
 
     def update_label(self, formatted_time):
         self.label.setText(f"Статус: Время - {formatted_time}")
@@ -205,8 +284,21 @@ class MainWindow(QMainWindow):
         elif not ok:
             QMessageBox.information(self, "Информация", "Добавление задачи отменено.")
 
+    def open_settings(self):
+        if self.tracker is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала начните отсчет.")
+            return
+        settings_dialog = SettingsDialog(self.tracker)
+        settings_dialog.exec_()  # Открываем диалог настроек
+
+        # После закрытия окна настроек обновляем таймер
+        if self.tracker.auto_report_enabled:
+            self.timer.start(self.tracker.report_interval * 60000)  # Устанавливаем интервал в миллисекундах
+        else:
+            self.timer.stop()  # Останавливаем таймер, если автоотчеты отключены
+
     def send_periodic_report(self):
-        if self.tracker:
+        if self.tracker and self.tracker.auto_report_enabled:
             self.tracker.send_periodic_report()
 
 def main():
