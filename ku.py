@@ -21,7 +21,7 @@ class TimeTracker(QThread):
         self.task_times = {}  # Словарь для хранения реального времени задач
         self.bot_token = bot_token
         self.chat_id = chat_id
-        self.auto_report_enabled = False  # Флаг для авторассылки отчетов
+        self.auto_report_enabled = True  # Флаг для авторассылки отчетов
         self.report_interval = 5  # Интервал в минутах по умолчанию
         self.threshold_percentage = 5  # Пороговый процент по умолчанию
 
@@ -34,27 +34,41 @@ class TimeTracker(QThread):
         minutes = int((total_seconds % 3600) // 60)
         seconds = total_seconds % 60
         return f"{hours} ч. {minutes} мин. {seconds:.2f} сек."
+    
+    def check_active_app_for_tasks(self):
+            active_app = self.get_active_window()
+            if active_app:
+                for task in self.tasks:
+                    task_name = task['name']
+                    # Проверяем, есть ли хотя бы одно слово из названия задачи в названии активного приложения
+                    if any(word in active_app for word in task_name.split()):
+                        if task_name not in self.task_times:
+                            self.task_times[task_name] = 0  # Инициализируем, если еще не было
+                        self.task_times[task_name] += 1  # Увеличиваем реальное время задачи на 1 секунду
 
     def run(self):
-        self.running = True
-        start_time = time.time()
+            self.running = True
+            start_time = time.time()
 
-        while self.running:
-            current_time = time.time()
-            elapsed_time = current_time - start_time
-            self.total_time += elapsed_time
+            while self.running:
+                current_time = time.time()
+                elapsed_time = current_time - start_time
+                self.total_time += elapsed_time
 
-            active_app = self.get_active_window()
-            if active_app and active_app not in self.app_times:
-                self.app_times[active_app] = 0
-            if active_app:
-                self.app_times[active_app] += elapsed_time
+                # Проверяем активное приложение на соответствие задачам
+                self.check_active_app_for_tasks()
 
-            formatted_time = self.format_time(self.total_time)
-            self.update_time.emit(formatted_time)
+                active_app = self.get_active_window()
+                if active_app and active_app not in self.app_times:
+                    self.app_times[active_app] = 0
+                if active_app:
+                    self.app_times[active_app] += elapsed_time
 
-            start_time = current_time
-            time.sleep(1)
+                formatted_time = self.format_time(self.total_time)
+                self.update_time.emit(formatted_time)
+
+                start_time = current_time
+                time.sleep(1)
 
     def stop_tracking(self):
         self.running = False
@@ -292,7 +306,7 @@ class MainWindow(QMainWindow):
             if ok and planned_time_str.isdigit():
                 planned_time = int(planned_time_str)
                 self.tracker.tasks.append({'name': task_name, 'planned_time': planned_time})
-                self.tracker.task_times[task_name] = self.tracker.total_time  # Сохраняем время начала задачи
+                self.tracker.task_times[task_name] = 0  # Сохраняем время начала задачи
             else:
                 QMessageBox.warning(self, "Ошибка", "Некорректное запланированное время.")
         elif not ok:
