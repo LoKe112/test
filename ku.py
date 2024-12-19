@@ -84,8 +84,7 @@ class TimeTracker(QThread):
         apps = list(self.app_times.keys())
         times = [self.app_times[app] for app in apps]
 
-        if len(apps) > 10:
-            # Объединяем приложения, которые составляют менее порогового процента
+        if len(apps) > self.elements_threshold:
             threshold = self.total_time * (self.threshold_percentage / 100)
             other_time = sum(time for time in times if time < threshold)
             filtered_apps = [app for app, time in zip(apps, times) if time >= threshold]
@@ -162,7 +161,7 @@ class SettingsDialog(QDialog):
 
     def initUI(self):
         self.setWindowTitle("Настройки")
-        self.setGeometry(100, 100, 300, 250)
+        self.setGeometry(100, 100, 300, 300)
 
         layout = QVBoxLayout()
 
@@ -174,35 +173,42 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.interval_label)
 
         self.interval_spinner = QSpinBox()
-        self.interval_spinner.setRange(1, 60)  # Устанавливаем диапазон от 1 до 60 минут
-        self.interval_spinner.setValue(self.tracker.report_interval)  # Устанавливаем текущее значение
-        self.interval_spinner.setFixedWidth(80)  # Устанавливаем фиксированную ширину
+        self.interval_spinner.setRange(1, 60)
+        self.interval_spinner.setValue(self.tracker.report_interval)
+        self.interval_spinner.setFixedWidth(80)
         layout.addWidget(self.interval_spinner)
 
         self.threshold_label = QLabel("Выберите пороговой процент n:")
         layout.addWidget(self.threshold_label)
 
         self.threshold_spinner = QSpinBox()
-        self.threshold_spinner.setRange(1, 100)  # Устанавливаем диапазон от 1 до 100 процентов
-        self.threshold_spinner.setValue(self.tracker.threshold_percentage)  # Устанавливаем текущее значение
-        self.threshold_spinner.setFixedWidth(80)  # Устанавливаем фиксированную ширину
+        self.threshold_spinner.setRange(1, 100)
+        self.threshold_spinner.setValue(self.tracker.threshold_percentage)
+        self.threshold_spinner.setFixedWidth(80)
         layout.addWidget(self.threshold_spinner)
 
+        self.elements_threshold_label = QLabel("Пороговое количество элементов для 'Остальное':")
+        layout.addWidget(self.elements_threshold_label)
+
+        self.elements_threshold_spinner = QSpinBox()
+        self.elements_threshold_spinner.setRange(1, 20)
+        self.elements_threshold_spinner.setValue(10)  # Устанавливаем значение по умолчанию
+        layout.addWidget(self.elements_threshold_spinner)
+
         self.save_button = QPushButton("Сохранить настройки")
-        self.save_button.setStyleSheet("background-color: #4CAF50; color: white; font-size: 12px;")  # Стиль кнопки
+        self.save_button.setStyleSheet("background-color: #4CAF50; color: white; font-size: 12px;")
         self.save_button.clicked.connect(self.save_settings)
         layout.addWidget(self.save_button)
 
         self.setLayout(layout)
-
-        # Применяем основной стиль
-        self.setStyleSheet("background-color: #2E2E2E; color: white;")  # Основной цвет фона
+        self.setStyleSheet("background-color: #2E2E2E; color: white;")
 
     def save_settings(self):
         self.tracker.auto_report_enabled = self.auto_report_checkbox.isChecked()
         self.tracker.report_interval = self.interval_spinner.value()
-        self.tracker.threshold_percentage = self.threshold_spinner.value()  # Сохраняем пороговый процент
-        self.close()  # Закрываем окно настроек
+        self.tracker.threshold_percentage = self.threshold_spinner.value()
+        self.tracker.elements_threshold = self.elements_threshold_spinner.value()  # Сохраняем пороговое количество элементов
+        self.close()
 
 
 
