@@ -24,6 +24,7 @@ class TimeTracker(QThread):
         self.auto_report_enabled = True  # Флаг для авторассылки отчетов
         self.report_interval = 5  # Интервал в минутах по умолчанию
         self.threshold_percentage = 5  # Пороговый процент по умолчанию
+        self.elements_threshold = 10  # Инициализация порогового количества элементов по умолчанию
 
     def get_active_window(self):
         active_window = gw.getActiveWindow()
