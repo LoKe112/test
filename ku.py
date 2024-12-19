@@ -16,6 +16,7 @@ class TimeTracker(QThread):
         super().__init__()
         self.total_time = 0
         self.running = False
+        self.paused = False  # Флаг для отслеживания состояния паузы
         self.app_times = {}
         self.tasks = []  # Задачи будут храниться в виде словарей
         self.task_times = {}  # Словарь для хранения реального времени задач
@@ -25,6 +26,9 @@ class TimeTracker(QThread):
         self.report_interval = 5  # Интервал в минутах по умолчанию
         self.threshold_percentage = 5  # Пороговый процент по умолчанию
         self.elements_threshold = 10  # Инициализация порогового количества элементов по умолчанию
+        self.elapsed_during_pause = 0  # Время, проведенное в паузе
+        self.triggerd_count = 0
+        self.elapsed_during_pause_temp = 0
 
     def get_active_window(self):
         active_window = gw.getActiveWindow()
@@ -48,28 +52,47 @@ class TimeTracker(QThread):
                         self.task_times[task_name] += 1  # Увеличиваем реальное время задачи на 1 секунду
 
     def run(self):
-            self.running = True
-            start_time = time.time()
+        self.running = True
+        start_time = time.time()
 
-            while self.running:
+        while self.running:
+            if not self.paused:  # Проверяем, не приостановлен ли отсчет
                 current_time = time.time()
                 elapsed_time = current_time - start_time
                 self.total_time += elapsed_time
 
-                # Проверяем активное приложение на соответствие задачам
                 self.check_active_app_for_tasks()
 
                 active_app = self.get_active_window()
                 if active_app and active_app not in self.app_times:
                     self.app_times[active_app] = 0
                 if active_app:
-                    self.app_times[active_app] += elapsed_time
+                    if self.triggerd_count != 1:
+                        self.app_times[active_app] += elapsed_time
+                    else:
+                        self.triggerd_count = 0
+                        self.elapsed_during_pause_temp = 0
 
                 formatted_time = self.format_time(self.total_time)
                 self.update_time.emit(formatted_time)
 
                 start_time = current_time
-                time.sleep(1)
+            else:
+                time.sleep(1)  # Если приостановлено, просто ждем
+                
+    def pause_tracking(self):
+        if not self.paused:  # Проверяем, не приостановлен ли отсчет
+            self.paused = True
+            self.pause_start_time = time.time()  # Запоминаем время начала паузы
+
+    def resume_tracking(self):
+        if self.paused:  # Проверяем, действительно ли отсчет приостановлен
+            self.elapsed_during_pause += time.time() - self.pause_start_time  # Вычисляем время, проведенное в паузе
+            self.elapsed_during_pause_temp = self.elapsed_during_pause
+            self.total_time -= self.elapsed_during_pause
+            self.elapsed_during_pause = 0            
+            self.triggerd_count = 1
+            self.paused = False
 
     def stop_tracking(self):
         self.running = False
@@ -238,7 +261,7 @@ class MainWindow(QMainWindow):
     def initUI(self):
         self.setWindowTitle("Таймер Хронометража")
         self.setGeometry(100, 100, 400, 300)
-        self.setWindowIcon(QIcon('icon.png'))  # Укажите путь к иконке
+        self.setWindowIcon(QIcon('icon.png'))
 
         layout = QVBoxLayout()
 
@@ -251,6 +274,12 @@ class MainWindow(QMainWindow):
         self.stop_button.setStyleSheet("background-color: #f44336; color: white; font-size: 16px;")
         self.stop_button.clicked.connect(self.stop_tracking)
         layout.addWidget(self.stop_button)
+
+        # Кнопка для приостановки/возобновления отсчета
+        self.pause_resume_button = QPushButton("Приостановить")
+        self.pause_resume_button.setStyleSheet("background-color: #FFC107; color: black; font-size: 16px;")
+        self.pause_resume_button.clicked.connect(self.toggle_pause_resume)
+        layout.addWidget(self.pause_resume_button)
 
         self.task_button = QPushButton("Добавить задачу")
         self.task_button.setStyleSheet("background-color: #2196F3; color: white; font-size: 16px;")
@@ -285,6 +314,18 @@ class MainWindow(QMainWindow):
             # Запускаем таймер для автоотчетов, если включен
             if self.tracker.auto_report_enabled:
                 self.timer.start(self.tracker.report_interval * 60000)  # Устанавливаем интервал в миллисекундах
+                
+    def toggle_pause_resume(self):
+        if self.tracker:
+            if self.tracker.paused:
+                self.tracker.resume_tracking()
+                self.pause_resume_button.setText("Приостановить")
+                self.label.setText("Статус: Хронометраж возобновлен.")
+            else:
+                self.tracker.pause_tracking()
+                self.pause_resume_button.setText("Возобновить")
+                self.label.setText("Статус: Хронометраж приостановлен.")
+
 
     def update_label(self, formatted_time):
         self.label.setText(f"Статус: Время - {formatted_time}")
