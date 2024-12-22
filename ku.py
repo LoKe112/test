@@ -4,9 +4,13 @@ import os
 import requests
 import pygetwindow as gw
 import matplotlib.pyplot as plt
+import webbrowser  # Импортируем для открытия ссылки
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QInputDialog, QMessageBox, QDialog, QCheckBox, QSpinBox
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon
+import tkinter as tk
+from tkinter import messagebox
+warning_shown = False
 
 class TimeTracker(QThread):
     update_time = pyqtSignal(str)
@@ -38,19 +42,35 @@ class TimeTracker(QThread):
         hours = int(total_seconds // 3600)
         minutes = int((total_seconds % 3600) // 60)
         seconds = total_seconds % 60
-        return f"{hours} ч. {minutes} мин. {seconds:.2f} сек."
+        return f"{hours} ч. {minutes} мин. {seconds:.0f} сек."
     
-    def check_active_app_for_tasks(self):
-            active_app = self.get_active_window()
-            if active_app:
-                for task in self.tasks:
-                    task_name = task['name']
-                    # Проверяем, есть ли хотя бы одно слово из названия задачи в названии активного приложения
-                    if any(word in active_app for word in task_name.split()):
-                        if task_name not in self.task_times:
-                            self.task_times[task_name] = 0  # Инициализируем, если еще не было
-                        self.task_times[task_name] += 1  # Увеличиваем реальное время задачи на 1 секунду
+    def check_active_app_for_tasks(self, elapsed_time):
+        active_app = self.get_active_window()
+        if active_app:
+            for task in self.tasks:
+                task_name = task['name']
+                # Проверяем, есть ли хотя бы одно слово из названия задачи в названии активного приложения
+                if any(word in active_app for word in task_name.split()):
+                    if task_name not in self.task_times:
+                        self.task_times[task_name] = 0  # Инициализируем, если еще не было
+                    self.task_times[task_name] += elapsed_time  # Увеличиваем реальное время задачи на прошедшее время
+                    
+                    # Проверяем, достигнуто ли запланированное время
+                    planned_time = task['planned_time']
+                    if self.task_times[task_name] >= planned_time:
+                        self.task_times[task_name] = planned_time  # Ограничиваем время задач до запланированного
+                        self.show_warning(task_name)  # Вызываем функцию для отображения предупреждения
 
+    def show_warning(self, task_name):
+        global warning_shown  # Используем глобальный флаг
+        if not warning_shown:  # Проверяем, показано ли уже предупреждение
+            # Создаем скрытое основное окно
+            root = tk.Tk()
+            root.withdraw()  # Скрываем основное окно
+            messagebox.showwarning("Внимание", f"Задача достигла запланированного времени: {task_name}")
+            root.destroy()  # Закрываем основное окно после показа предупреждения
+            warning_shown = True  # Устанавливаем флаг в True
+    
     def run(self):
         self.running = True
         start_time = time.time()
@@ -61,17 +81,13 @@ class TimeTracker(QThread):
                 elapsed_time = current_time - start_time
                 self.total_time += elapsed_time
 
-                self.check_active_app_for_tasks()
+                self.check_active_app_for_tasks(elapsed_time)  # Передаем прошедшее время
 
                 active_app = self.get_active_window()
                 if active_app and active_app not in self.app_times:
                     self.app_times[active_app] = 0
                 if active_app:
-                    if self.triggerd_count != 1:
-                        self.app_times[active_app] += elapsed_time
-                    else:
-                        self.triggerd_count = 0
-                        self.elapsed_during_pause_temp = 0
+                    self.app_times[active_app] += elapsed_time
 
                 formatted_time = self.format_time(self.total_time)
                 self.update_time.emit(formatted_time)
@@ -114,9 +130,15 @@ class TimeTracker(QThread):
             for task in self.tasks:
                 planned_time = task['planned_time']
                 real_time = self.task_times.get(task['name'], 0)
-                file.write(f"- {task['name']}: {self.format_time(planned_time)} // {self.format_time(real_time)}\n")
+                if real_time >= planned_time:
+                    file.write(f"- {task['name']}: Задача выполнена\n")
+                else:
+                    file.write(f"- {task['name']}: {self.format_time(planned_time)} // {self.format_time(real_time)}\n")
 
         return report_file
+
+
+
 
     def create_chart(self):
         apps = list(self.app_times.keys())
@@ -274,10 +296,12 @@ class MainWindow(QMainWindow):
         self.stop_button.setStyleSheet("background-color: #f44336; color: white; font-size: 16px;")
         self.stop_button.clicked.connect(self.stop_tracking)
         layout.addWidget(self.stop_button)
+        
+        
 
         # Кнопка для приостановки/возобновления отсчета
         self.pause_resume_button = QPushButton("Приостановить")
-        self.pause_resume_button.setStyleSheet("background-color: #FFC107; color: black; font-size: 16px;")
+        self.pause_resume_button.setStyleSheet("background-color: #8b00ff; color: white; font-size: 16px;")
         self.pause_resume_button.clicked.connect(self.toggle_pause_resume)
         layout.addWidget(self.pause_resume_button)
 
@@ -285,6 +309,11 @@ class MainWindow(QMainWindow):
         self.task_button.setStyleSheet("background-color: #2196F3; color: white; font-size: 16px;")
         self.task_button.clicked.connect(self.add_task)
         layout.addWidget(self.task_button)
+        
+        self.bot_button = QPushButton("Получать информацию онлайн")
+        self.bot_button.setStyleSheet("background-color: #2196F3; color: white; font-size: 16px;")
+        self.bot_button.clicked.connect(self.open_bot_link)  # Подключаем обработчик события
+        layout.addWidget(self.bot_button)
 
         self.label = QLabel("Статус: Ожидание...")
         self.label.setFont(QFont("Arial", 12))
@@ -300,6 +329,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self.setStyleSheet("background-color: #2E2E2E; color: white;")  # Основной цвет фона
+        
+    def open_bot_link(self):
+        # Открываем ссылку на бота в Telegram
+        webbrowser.open("https://t.me/TimeAtTheComputerBot")
 
     def start_tracking(self):
         if not self.tracker or not self.tracker.isRunning():
